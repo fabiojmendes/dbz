@@ -1,7 +1,8 @@
-use std::collections::HashSet;
 use std::process;
+use std::{collections::HashSet, env};
 
 use clap::{Parser, Subcommand};
+use serde::Deserialize;
 use sqlx::{
     mysql::{MySqlPool, MySqlRow},
     Row,
@@ -11,21 +12,6 @@ use uuid::Uuid;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    #[arg(short = 'H', long)]
-    hostname: String,
-
-    #[arg(short, long)]
-    username: String,
-
-    #[arg(short, long)]
-    password: String,
-
-    #[arg(short, long)]
-    database: String,
-
-    #[arg(short, long)]
-    table: String,
-
     #[arg(short, long)]
     verbose: bool,
 
@@ -42,13 +28,32 @@ enum Command {
     Snapshot { tables: Vec<String> },
 }
 
+#[derive(Deserialize, Debug)]
+struct DatabaseConfig {
+    hostname: String,
+    username: String,
+    password: String,
+    database: String,
+    table: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), sqlx::Error> {
     let args = Cli::parse();
+    let home = env::var("HOME").expect("Home dir is not set");
+    let config: DatabaseConfig = config::Config::builder()
+        .add_source(config::File::with_name(&format!(
+            "{home}/.config/dbz/config"
+        )))
+        .add_source(config::Environment::with_prefix("DBZ"))
+        .build()
+        .unwrap()
+        .try_deserialize()
+        .unwrap();
 
     let url = format!(
         "mysql://{}:{}@{}/{}",
-        args.username, args.password, args.hostname, args.database
+        config.username, config.password, config.hostname, config.database
     );
     let conn = MySqlPool::connect(&url).await?;
 
@@ -77,7 +82,7 @@ async fn main() -> Result<(), sqlx::Error> {
                 process::exit(1);
             }
 
-            let sql = format!("insert into {} values (?, ?, ?)", args.table);
+            let sql = format!("insert into {} values (?, ?, ?)", config.table);
             sqlx::query(&sql)
                 .bind(Uuid::new_v4().to_string())
                 .bind("execute-snapshot")
