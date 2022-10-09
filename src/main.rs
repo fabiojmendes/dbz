@@ -2,16 +2,33 @@ use std::collections::HashSet;
 use std::process;
 
 use clap::{Parser, Subcommand};
-
-use sqlx::mysql::{MySqlPool, MySqlRow};
-use sqlx::Row;
+use sqlx::{
+    mysql::{MySqlPool, MySqlRow},
+    Row,
+};
 use uuid::Uuid;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    #[arg(short = 'H', long)]
+    hostname: String,
+
+    #[arg(short, long)]
+    username: String,
+
+    #[arg(short, long)]
+    password: String,
+
+    #[arg(short, long)]
+    database: String,
+
+    #[arg(short, long)]
+    table: String,
+
     #[arg(short, long)]
     verbose: bool,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -29,7 +46,11 @@ enum Command {
 async fn main() -> Result<(), sqlx::Error> {
     let args = Cli::parse();
 
-    let conn = MySqlPool::connect("mysql://admin:1234@mysql-slave.home/debezium").await?;
+    let url = format!(
+        "mysql://{}:{}@{}/{}",
+        args.username, args.password, args.hostname, args.database
+    );
+    let conn = MySqlPool::connect(&url).await?;
 
     match args.command {
         Command::Snapshot { tables } => {
@@ -56,7 +77,8 @@ async fn main() -> Result<(), sqlx::Error> {
                 process::exit(1);
             }
 
-            sqlx::query("insert into signaling values (?, ?, ?)")
+            let sql = format!("insert into {} values (?, ?, ?)", args.table);
+            sqlx::query(&sql)
                 .bind(Uuid::new_v4().to_string())
                 .bind("execute-snapshot")
                 .bind(data)
