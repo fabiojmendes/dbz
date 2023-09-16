@@ -3,6 +3,7 @@ use std::{collections::HashSet, env};
 
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
+use serde_json::json;
 use sqlx::{
     mysql::{MySqlPool, MySqlRow},
     Row,
@@ -60,8 +61,6 @@ async fn main() -> Result<(), sqlx::Error> {
     match args.command {
         Command::Snapshot { tables } => {
             println!("Executing snapshot for {:?}", tables);
-            let data = format!("{{ \"data-collections\": {:?} }}", tables);
-
             let rows: HashSet<String> = sqlx::query(
                 "select concat(table_schema, '.', table_name) from information_schema.tables",
             )
@@ -82,8 +81,11 @@ async fn main() -> Result<(), sqlx::Error> {
                 process::exit(1);
             }
 
-            let sql = format!("insert into {} values (?, ?, ?)", config.table);
-            sqlx::query(&sql)
+            let data = json!({
+                "data-collections": tables
+            });
+
+            sqlx::query(&format!("insert into {} values (?, ?, ?)", config.table))
                 .bind(Uuid::new_v4().to_string())
                 .bind("execute-snapshot")
                 .bind(data)
